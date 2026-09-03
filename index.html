@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>CPP WRLD</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <!-- NAVBAR -->
+    <header class="navbar">
+
+        <a href="#" class="brand">
+            CPP WRLD
+        </a>
+
+        <nav class="nav-links">
+            <a href="#shop">Shop</a>
+            <a href="#about">About</a>
+        </nav>
+
+        <button class="bag" onclick="openCart()">
+            Bag <span id="cartCount">0</span>
+        </button>
+
+    </header>
+
+
+    <!-- HERO -->
+    <main>
+
+        <section class="hero">
+
+            <div class="hero-copy">
+
+                <p class="label">
+                    FIRST CUT · 2026
+                </p>
+
+                <h1>
+                    CPP<br>
+                    <span>WRLD</span>
+                </h1>
+
+                <p class="hero-description">
+                    A world of limited pieces,
+                    collectibles and original ideas.
+                </p>
+
+                <a href="#shop" class="hero-button">
+                    EXPLORE DROP
+                    <span>→</span>
+                </a>
+
+            </div>
+
+
+            <div class="hero-visual">
+
+                <div class="hero-number">
+                    01
+                </div>
+
+                <div class="hero-word">
+                    CPP
+                </div>
+
+                <div class="hero-info">
+                    <span>CPP WRLD</span>
+                    <span>MEXICO · EST. 2026</span>
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- SHOP -->
+        <section class="shop" id="shop">
+
+            <div class="shop-heading">
+
+                <div>
+                    <p class="label">
+                        COLLECTION
+                    </p>
+
+                    <h2>
+                        FIRST CUT
+                    </h2>
+                </div>
+
+                <p class="collection-description">
+                    Limited pieces from CPP WRLD.
+                </p>
+
+            </div>
+
+
+            <div
+                id="productGrid"
+                class="product-grid">
+            </div>
+
+        </section>
+
+
+        <!-- ABOUT -->
+        <section class="about" id="about">
+
+            <div class="about-small">
+                ABOUT CPP WRLD
+            </div>
+
+            <div class="about-main">
+
+                <h2>
+                    MADE IN<br>
+                    <span>MEXICO.</span>
+                </h2>
+
+                <p>
+                    CPP WRLD is an independent creative brand
+                    built around limited drops, collectibles
+                    and original designs.
+                </p>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <!-- OVERLAY -->
+    <div
+        id="overlay"
+        class="overlay"
+        onclick="closeCart()">
+    </div>
+
+
+    <!-- CART -->
+    <aside
+        id="cart"
+        class="cart">
+
+        <div class="cart-top">
+
+            <div>
+                <p class="label">
+                    SHOPPING
+                </p>
+
+                <h2>
+                    BAG
+                </h2>
+            </div>
+
+            <button
+                class="close-cart"
+                onclick="closeCart()">
+                ×
+            </button>
+
+        </div>
+
+
+        <div
+            id="cartItems"
+            class="cart-items">
+        </div>
+
+
+        <div class="cart-bottom">
+
+            <div class="summary">
+
+                <div>
+                    <span>Subtotal</span>
+                    <strong id="cartSubtotal">
+                        $0 MXN
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Envío</span>
+                    <span class="muted">
+                        Se calcula después
+                    </span>
+                </div>
+
+                <div class="grand-total">
+                    <span>Total</span>
+                    <strong id="cartTotal">
+                        $0 MXN
+                    </strong>
+                </div>
+
+            </div>
+
+
+            <!-- CHECKOUT -->
+            <form id="checkoutForm">
+
+                <p class="form-label">
+                    CUSTOMER INFORMATION
+                </p>
+
+
+                <div class="two-inputs">
+
+                    <input
+                        id="firstName"
+                        type="text"
+                        placeholder="Nombre"
+                        required>
+
+                    <input
+                        id="lastName"
+                        type="text"
+                        placeholder="Apellido"
+                        required>
+
+                </div>
+
+
+                <input
+                    id="email"
+                    type="email"
+                    placeholder="Correo electrónico"
+                    required>
+
+
+                <input
+                    id="phone"
+                    type="tel"
+                    placeholder="Teléfono"
+                    required>
+
+
+                <input
+                    id="address"
+                    type="text"
+                    placeholder="Dirección"
+                    required>
+
+
+                <div class="two-inputs">
+
+                    <input
+                        id="city"
+                        type="text"
+                        placeholder="Ciudad"
+                        required>
+
+                    <input
+                        id="postalCode"
+                        type="text"
+                        placeholder="C.P."
+                        maxlength="5"
+                        required>
+
+                </div>
+
+
+                <select
+                    id="state"
+                    required>
+
+                    <option value="">
+                        Estado
+                    </option>
+
+                    <option>Aguascalientes</option>
+                    <option>Baja California</option>
+                    <option>Baja California Sur</option>
+                    <option>Campeche</option>
+                    <option>Chiapas</option>
+                    <option>Chihuahua</option>
+                    <option>Ciudad de México</option>
+                    <option>Coahuila</option>
+                    <option>Colima</option>
+                    <option>Durango</option>
+                    <option>Estado de México</option>
+                    <option>Guanajuato</option>
+                    <option>Guerrero</option>
+                    <option>Hidalgo</option>
+                    <option>Jalisco</option>
+                    <option>Michoacán</option>
+                    <option>Morelos</option>
+                    <option>Nayarit</option>
+                    <option>Nuevo León</option>
+                    <option>Oaxaca</option>
+                    <option>Puebla</option>
+                    <option>Querétaro</option>
+                    <option>Quintana Roo</option>
+                    <option>San Luis Potosí</option>
+                    <option>Sinaloa</option>
+                    <option>Sonora</option>
+                    <option>Tabasco</option>
+                    <option>Tamaulipas</option>
+                    <option>Tlaxcala</option>
+                    <option>Veracruz</option>
+                    <option>Yucatán</option>
+                    <option>Zacatecas</option>
+
+                </select>
+
+
+                <textarea
+                    id="notes"
+                    placeholder="Notas del pedido (opcional)">
+                </textarea>
+
+
+                <button
+                    id="checkoutButton"
+                    class="checkout-button"
+                    type="submit">
+
+                    CONTINUAR CON MERCADO PAGO
+
+                </button>
+
+
+                <p class="secure">
+                    Pago seguro · Mercado Pago
+                </p>
+
+            </form>
+
+        </div>
+
+    </aside>
+
+
+    <div
+        id="toast"
+        class="toast">
+    </div>
+
+
+    <script src="script.js"></script>
+
+</body>
+
+<section class="intro-gif">
+    <img src="assets/intro.gif" alt="CPP WRLD">
+</section>
+
+</html>
