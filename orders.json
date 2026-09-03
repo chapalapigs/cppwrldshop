@@ -1,0 +1,58 @@
+[
+  {
+    "id": "CPP-1788411039786-149BBB1D",
+    "status": "pending",
+    "customer": {
+      "firstName": "Creeper",
+      "lastName": "Explosivo",
+      "email": "mateoriveramejer@gmail.com",
+      "phone": "961 166 9525",
+      "address": "tuxtla",
+      "city": "Queretaro",
+      "state": "Chiapas",
+      "postalCode": "91930",
+      "notes": "hola"
+    },
+    "items": [
+      {
+        "id": "test",
+        "title": "TEST",
+        "quantity": 1,
+        "unit_price": 25,
+        "currency_id": "MXN"
+      }
+    ],
+    "total": 25,
+    "shipping": null,
+    "paymentId": null,
+    "createdAt": "2026-09-03T04:50:39.786Z"
+  },
+  {
+    "id": "CPP-1788411307692-DD755E37",
+    "status": "pending",
+    "customer": {
+      "firstName": "Creeper",
+      "lastName": "Explosivo",
+      "email": "mateoriveramejer@gmail.com",
+      "phone": "9611669525",
+      "address": "MI CASA",
+      "city": "Tuxtla",
+      "state": "Chiapas",
+      "postalCode": "91930",
+      "notes": ""
+    },
+    "items": [
+      {
+        "id": "test",
+        "title": "TEST",
+        "quantity": 1,
+        "unit_price": 25,
+        "currency_id": "MXN"
+      }
+    ],
+    "total": 25,
+    "shipping": null,
+    "paymentId": null,
+    "createdAt": "2026-09-03T04:55:07.692Z"
+  }
+]
