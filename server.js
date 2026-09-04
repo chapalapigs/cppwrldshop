@@ -1,19 +1,43 @@
+require("dotenv").config();
+
 const express = require("express");
 const rateLimit = require("express-rate-limit");
-const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-require("dotenv").config();
+
+const { sendTelegramMessage } = require("./telegram");
 
 const app = express();
 
+// Render está detrás de un proxy
+app.set("trust proxy", 1);
+
 const PORT = process.env.PORT || 3000;
 
-/* =========================================
-   PRODUCTOS
-   El precio REAL se controla aquí.
-========================================= */
+// ==============================
+// VARIABLES DE ENTORNO
+// ==============================
+
+const MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
+const MP_WEBHOOK_SECRET = process.env.MP_WEBHOOK_SECRET;
+
+const STORE_URL =
+    process.env.STORE_URL ||
+    "https://cppwrldshop.onrender.com";
+
+const MP_NOTIFICATION_URL =
+    process.env.MP_NOTIFICATION_URL ||
+    `${STORE_URL}/api/webhook/mercadopago`;
+
+const ORDERS_FILE = path.join(
+    __dirname,
+    "orders.json"
+);
+
+// ==============================
+// PRODUCTOS
+// ==============================
 
 const PRODUCTS = {
     test: {
@@ -23,26 +47,20 @@ const PRODUCTS = {
     }
 };
 
-
-/* =========================================
-   MIDDLEWARE
-========================================= */
+// ==============================
+// MIDDLEWARE
+// ==============================
 
 app.use(express.json());
+app.use(express.static(__dirname));
 
-app.use(
-    express.static(__dirname)
-);
-
-
-/* =========================================
-   RATE LIMIT
-========================================= */
+// ==============================
+// RATE LIMIT
+// ==============================
 
 const checkoutLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 20,
-
     standardHeaders: true,
     legacyHeaders: false
 });
@@ -50,133 +68,95 @@ const checkoutLimiter = rateLimit({
 const webhookLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 100,
-
     standardHeaders: true,
     legacyHeaders: false
 });
 
+// ==============================
+// HELPERS
+// ==============================
 
-/* =========================================
-   UTILIDADES
-========================================= */
-
-function cleanText(value, maxLength) {
-
-    if (typeof value !== "string") {
-        return "";
-    }
-
-    return value
+function cleanText(value, maxLength = 500) {
+    return String(value ?? "")
         .trim()
         .slice(0, maxLength);
 }
 
-
 function createOrderId() {
-
-    const random =
+    return (
+        "CPP-" +
+        Date.now() +
+        "-" +
         crypto
             .randomBytes(4)
             .toString("hex")
-            .toUpperCase();
-
-    return `CPP-${Date.now()}-${random}`;
+            .toUpperCase()
+    );
 }
 
-
-/* =========================================
-   CLIENTE
-========================================= */
-
-function cleanCustomer(customer) {
-
-    customer = customer || {};
-
+function cleanCustomer(customer = {}) {
     return {
+        firstName: cleanText(
+            customer.firstName,
+            100
+        ),
 
-        firstName:
-            cleanText(
-                customer.firstName,
-                80
-            ),
+        lastName: cleanText(
+            customer.lastName,
+            100
+        ),
 
-        lastName:
-            cleanText(
-                customer.lastName,
-                80
-            ),
+        email: cleanText(
+            customer.email,
+            200
+        ),
 
-        email:
-            cleanText(
-                customer.email,
-                160
-            ),
+        phone: cleanText(
+            customer.phone,
+            50
+        ),
 
-        phone:
-            cleanText(
-                customer.phone,
-                40
-            ),
+        address: cleanText(
+            customer.address,
+            300
+        ),
 
-        address:
-            cleanText(
-                customer.address,
-                200
-            ),
+        city: cleanText(
+            customer.city,
+            100
+        ),
 
-        city:
-            cleanText(
-                customer.city,
-                100
-            ),
+        state: cleanText(
+            customer.state,
+            100
+        ),
 
-        state:
-            cleanText(
-                customer.state,
-                100
-            ),
+        postalCode: cleanText(
+            customer.postalCode,
+            20
+        ),
 
-        postalCode:
-            cleanText(
-                customer.postalCode,
-                5
-            ),
-
-        notes:
-            cleanText(
-                customer.notes,
-                500
-            )
-
+        notes: cleanText(
+            customer.notes,
+            500
+        )
     };
 }
 
-
-/* =========================================
-   VALIDAR ITEMS
-========================================= */
-
 function validateItems(items) {
-
-    if (
-        !Array.isArray(items) ||
-        items.length === 0
-    ) {
+    if (!Array.isArray(items) || items.length === 0) {
         throw new Error(
             "El carrito está vacío."
         );
     }
 
-    const validatedItems = [];
-
-    for (const item of items) {
-
+    return items.map(item => {
         const product =
             PRODUCTS[item.id];
 
         if (!product) {
             throw new Error(
-                "Producto no válido."
+                `Producto inválido: ${item.id}`
             );
         }
 
@@ -189,69 +169,42 @@ function validateItems(items) {
             quantity > 20
         ) {
             throw new Error(
-                "Cantidad no válida."
+                "Cantidad de producto inválida."
             );
         }
 
-        validatedItems.push({
-
-            id:
-                product.id,
-
-            title:
-                product.title,
-
-            quantity:
-                quantity,
-
-            unit_price:
-                product.price,
-
-            currency_id:
-                "MXN"
-
-        });
-    }
-
-    return validatedItems;
+        return {
+            id: product.id,
+            title: product.title,
+            quantity,
+            unit_price: product.price
+        };
+    });
 }
 
-
-/* =========================================
-   PEDIDOS
-========================================= */
-
-const ordersFile =
-    path.join(
-        __dirname,
-        "orders.json"
-    );
-
-
-function getOrders() {
-
-    if (
-        !fs.existsSync(
-            ordersFile
-        )
-    ) {
-        return [];
-    }
-
+function readOrders() {
     try {
+        if (!fs.existsSync(ORDERS_FILE)) {
+            return [];
+        }
 
-        const content =
+        const data =
             fs.readFileSync(
-                ordersFile,
+                ORDERS_FILE,
                 "utf8"
             );
 
-        return JSON.parse(
-            content || "[]"
-        );
+        if (!data.trim()) {
+            return [];
+        }
 
+        const parsed =
+            JSON.parse(data);
+
+        return Array.isArray(parsed)
+            ? parsed
+            : [];
     } catch (error) {
-
         console.error(
             "Error leyendo orders.json:",
             error
@@ -261,142 +214,120 @@ function getOrders() {
     }
 }
 
-
-function saveOrders(orders) {
-
+function writeOrders(orders) {
     fs.writeFileSync(
-        ordersFile,
-
+        ORDERS_FILE,
         JSON.stringify(
             orders,
             null,
             2
-        )
+        ),
+        "utf8"
     );
 }
 
+// ==============================
+// TELEGRAM
+// ==============================
 
-function saveOrder(order) {
-
-    const orders =
-        getOrders();
-
-    orders.push(order);
-
-    saveOrders(orders);
+function escapeTelegram(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
 }
 
-
-function findOrder(orderId) {
-
-    const orders =
-        getOrders();
-
-    return orders.find(
-        order =>
-            order.id === orderId
-    );
-}
-
-
-function updateOrder(
-    orderId,
-    changes
+async function sendSaleTelegram(
+    order,
+    payment
 ) {
+    const productLines =
+        order.items
+            .map(item => {
+                const subtotal =
+                    item.unit_price *
+                    item.quantity;
 
-    const orders =
-        getOrders();
+                return (
+                    `📦 ${escapeTelegram(item.title)} ` +
+                    `×${item.quantity} — ` +
+                    `$${subtotal} MXN`
+                );
+            })
+            .join("\n");
 
-    const index =
-        orders.findIndex(
-            order =>
-                order.id === orderId
+    const message = `
+🛍️ <b>NUEVA VENTA — CPP WRLD SHOP</b>
+
+🧾 <b>Pedido:</b>
+#${escapeTelegram(order.id)}
+
+✅ <b>PAGO APROBADO</b>
+
+${productLines}
+
+💰 <b>Total:</b>
+$${order.total} MXN
+
+👤 <b>Cliente:</b>
+${escapeTelegram(order.customer.firstName)} ${escapeTelegram(order.customer.lastName)}
+
+📧 ${escapeTelegram(order.customer.email)}
+
+📱 ${escapeTelegram(order.customer.phone)}
+
+📍 <b>Dirección de envío:</b>
+${escapeTelegram(order.customer.address)}
+
+🏙️ ${escapeTelegram(order.customer.city)}
+
+🗺️ ${escapeTelegram(order.customer.state)}
+
+📮 C.P. ${escapeTelegram(order.customer.postalCode)}
+
+📝 <b>Notas:</b>
+${escapeTelegram(
+    order.customer.notes ||
+    "Sin notas"
+)}
+
+💳 <b>ID de pago:</b>
+${escapeTelegram(payment.id)}
+
+💳 <b>Estado:</b>
+${escapeTelegram(payment.status)}
+
+🐷 <b>CPP WRLD SHOP</b>
+`;
+
+    await sendTelegramMessage(
+        message
+    );
+}
+
+// ==============================
+// MERCADO PAGO
+// ==============================
+
+async function getMercadoPagoPayment(
+    paymentId
+) {
+    if (!MP_ACCESS_TOKEN) {
+        throw new Error(
+            "Falta MP_ACCESS_TOKEN."
         );
-
-    if (index === -1) {
-        return null;
     }
-
-    orders[index] = {
-        ...orders[index],
-        ...changes
-    };
-
-    saveOrders(orders);
-
-    return orders[index];
-}
-
-
-/* =========================================
-   MERCADO PAGO
-========================================= */
-
-async function createPreference(
-    orderId,
-    items,
-    customer
-) {
 
     const response =
         await fetch(
-            "https://api.mercadopago.com/checkout/preferences",
+            `https://api.mercadopago.com/v1/payments/${encodeURIComponent(paymentId)}`,
             {
-
-                method: "POST",
+                method: "GET",
 
                 headers: {
-
                     Authorization:
-                        `Bearer ${process.env.MP_ACCESS_TOKEN}`,
-
-                    "Content-Type":
-                        "application/json"
-
-                },
-
-                body:
-                    JSON.stringify({
-
-                        items: items,
-
-                        payer: {
-
-                            name:
-                                customer.firstName,
-
-                            surname:
-                                customer.lastName,
-
-                            email:
-                                customer.email
-
-                        },
-
-                        external_reference:
-                            orderId,
-
-                        notification_url:
-                            process.env.MP_NOTIFICATION_URL,
-
-                        back_urls: {
-
-                            success:
-                                `${process.env.STORE_URL}/?payment=success`,
-
-                            pending:
-                                `${process.env.STORE_URL}/?payment=pending`,
-
-                            failure:
-                                `${process.env.STORE_URL}/?payment=failure`
-
-                        },
-
-                        auto_return:
-                            "approved"
-
-                    })
-
+                        `Bearer ${MP_ACCESS_TOKEN}`
+                }
             }
         );
 
@@ -404,745 +335,617 @@ async function createPreference(
         await response.json();
 
     if (!response.ok) {
-
-        console.error(
-            "Mercado Pago error:",
-            data
-        );
-
         throw new Error(
-            "Mercado Pago no pudo crear el checkout."
+            data.message ||
+            "No se pudo obtener el pago."
         );
     }
 
     return data;
 }
 
-
-/* =========================================
-   CREAR PREFERENCIA
-========================================= */
+// ==============================
+// CREAR CHECKOUT
+// ==============================
 
 app.post(
     "/api/create-preference",
-
     checkoutLimiter,
-
     async (req, res) => {
-
         try {
-
-            if (
-                !process.env.MP_ACCESS_TOKEN
-            ) {
-                throw new Error(
-                    "Falta configurar MP_ACCESS_TOKEN."
-                );
-            }
-
-            if (
-                !process.env.MP_NOTIFICATION_URL
-            ) {
-                throw new Error(
-                    "Falta configurar MP_NOTIFICATION_URL."
-                );
-            }
-
-            if (
-                !process.env.STORE_URL
-            ) {
-                throw new Error(
-                    "Falta configurar STORE_URL."
-                );
-            }
-
-
-            const customer =
-                cleanCustomer(
-                    req.body.customer
-                );
-
-
-            if (
-                !customer.firstName ||
-                !customer.lastName ||
-                !customer.email ||
-                !customer.phone ||
-                !customer.address ||
-                !customer.city ||
-                !customer.state ||
-                !customer.postalCode
-            ) {
-
-                return res.status(400).json({
-
+            if (!MP_ACCESS_TOKEN) {
+                return res.status(500).json({
                     error:
-                        "Completa todos los datos del cliente."
-
+                        "Mercado Pago no está configurado."
                 });
-
             }
 
+            const {
+                items,
+                customer
+            } = req.body || {};
 
-            const items =
-                validateItems(
-                    req.body.items
-                );
+            const cleanItems =
+                validateItems(items);
 
+            const cleanCustomerData =
+                cleanCustomer(customer);
+
+            if (
+                !cleanCustomerData.firstName ||
+                !cleanCustomerData.lastName ||
+                !cleanCustomerData.email ||
+                !cleanCustomerData.phone ||
+                !cleanCustomerData.address ||
+                !cleanCustomerData.city ||
+                !cleanCustomerData.state ||
+                !cleanCustomerData.postalCode
+            ) {
+                return res.status(400).json({
+                    error:
+                        "Faltan datos del cliente."
+                });
+            }
 
             const total =
-                items.reduce(
-                    (
-                        sum,
-                        item
-                    ) =>
+                cleanItems.reduce(
+                    (sum, item) =>
                         sum +
-                        (
-                            item.unit_price *
-                            item.quantity
-                        ),
-
+                        item.unit_price *
+                        item.quantity,
                     0
                 );
-
 
             const orderId =
                 createOrderId();
 
-
             const order = {
+                id: orderId,
 
-                id:
-                    orderId,
+                status: "pending",
 
-                status:
-                    "pending",
+                paymentStatus: "pending",
 
-                customer:
-                    customer,
-
-                items:
-                    items,
-
-                total:
-                    total,
-
-                shipping:
-                    null,
-
-                paymentId:
-                    null,
+                paymentId: null,
 
                 createdAt:
-                    new Date().toISOString()
+                    new Date().toISOString(),
 
+                paidAt: null,
+
+                customer:
+                    cleanCustomerData,
+
+                items:
+                    cleanItems,
+
+                total
             };
 
+            const orders =
+                readOrders();
 
-            saveOrder(order);
+            orders.push(order);
 
+            writeOrders(orders);
 
-            const preference =
-                await createPreference(
+            const preference = {
+                items:
+                    cleanItems.map(
+                        item => ({
+                            id: item.id,
+
+                            title:
+                                item.title,
+
+                            quantity:
+                                item.quantity,
+
+                            currency_id:
+                                "MXN",
+
+                            unit_price:
+                                item.unit_price
+                        })
+                    ),
+
+                external_reference:
                     orderId,
-                    items,
-                    customer
+
+                notification_url:
+                    MP_NOTIFICATION_URL,
+
+                back_urls: {
+                    success:
+                        STORE_URL,
+
+                    failure:
+                        STORE_URL,
+
+                    pending:
+                        STORE_URL
+                },
+
+                auto_return:
+                    "approved"
+            };
+
+            console.log(
+                "Creando preferencia:",
+                orderId
+            );
+
+            const response =
+                await fetch(
+                    "https://api.mercadopago.com/checkout/preferences",
+                    {
+                        method: "POST",
+
+                        headers: {
+                            Authorization:
+                                `Bearer ${MP_ACCESS_TOKEN}`,
+
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body:
+                            JSON.stringify(
+                                preference
+                            )
+                    }
                 );
 
+            const data =
+                await response.json();
+
+            if (!response.ok) {
+                console.error(
+                    "Mercado Pago rechazó la preferencia:",
+                    data
+                );
+
+                return res.status(
+                    500
+                ).json({
+                    error:
+                        data.message ||
+                        "No se pudo crear el pago."
+                });
+            }
+
+            console.log(
+                "Preferencia creada:",
+                orderId
+            );
 
             return res.json({
-
                 init_point:
-                    preference.init_point,
+                    data.init_point,
 
-                orderId:
-                    orderId
-
+                orderId
             });
 
         } catch (error) {
-
             console.error(
-                "Checkout error:",
+                "Error creando preferencia:",
                 error
             );
 
             return res.status(500).json({
-
                 error:
                     error.message ||
-                    "Error creando el checkout."
-
+                    "Error interno."
             });
         }
-
     }
 );
 
-
-/* =========================================
-   FIRMA DEL WEBHOOK
-========================================= */
-
-function getWebhookSignature(req) {
-
-    const xSignature =
-        req.headers["x-signature"];
-
-    const xRequestId =
-        req.headers["x-request-id"];
-
-    if (
-        !xSignature ||
-        !xRequestId
-    ) {
-        return null;
-    }
-
-
-    let timestamp = "";
-    let signature = "";
-
-
-    const parts =
-        xSignature.split(",");
-
-
-    for (
-        const part of parts
-    ) {
-
-        const separator =
-            part.indexOf("=");
-
-        if (separator === -1) {
-            continue;
-        }
-
-        const key =
-            part.slice(
-                0,
-                separator
-            );
-
-        const value =
-            part.slice(
-                separator + 1
-            );
-
-
-        if (
-            key === "ts"
-        ) {
-            timestamp =
-                value;
-        }
-
-
-        if (
-            key === "v1"
-        ) {
-            signature =
-                value;
-        }
-
-    }
-
-
-    const dataId =
-        req.body?.data?.id ||
-        req.query["data.id"] ||
-        req.query.id ||
-        "";
-
-
-    return {
-
-        timestamp,
-
-        signature,
-
-        requestId:
-            xRequestId,
-
-        dataId:
-            String(
-                dataId
-            ).toLowerCase()
-
-    };
-}
-
-
-/* =========================================
-   VERIFICAR WEBHOOK
-========================================= */
-
-function verifyWebhook(req) {
-
-    const data =
-        getWebhookSignature(
-            req
-        );
-
-
-    if (!data) {
-        return false;
-    }
-
-
-    if (
-        !process.env.MP_WEBHOOK_SECRET
-    ) {
-        console.error(
-            "Falta MP_WEBHOOK_SECRET."
-        );
-
-        return false;
-    }
-
-
-    if (
-        !data.timestamp ||
-        !data.signature ||
-        !data.dataId
-    ) {
-        return false;
-    }
-
-
-    const manifest =
-        `id:${data.dataId};request-id:${data.requestId};ts:${data.timestamp};`;
-
-
-    const expected =
-        crypto
-            .createHmac(
-                "sha256",
-                process.env.MP_WEBHOOK_SECRET
-            )
-            .update(manifest)
-            .digest("hex");
-
-
-    try {
-
-        return crypto.timingSafeEqual(
-
-            Buffer.from(
-                expected,
-                "utf8"
-            ),
-
-            Buffer.from(
-                data.signature,
-                "utf8"
-            )
-
-        );
-
-    } catch {
-
-        return false;
-
-    }
-}
-
-
-/* =========================================
-   OBTENER PAGO
-========================================= */
-
-async function getPayment(
-    paymentId
-) {
-
-    const response =
-        await fetch(
-            `https://api.mercadopago.com/v1/payments/${paymentId}`,
-            {
-
-                method: "GET",
-
-                headers: {
-
-                    Authorization:
-                        `Bearer ${process.env.MP_ACCESS_TOKEN}`
-
-                }
-
-            }
-        );
-
-
-    if (!response.ok) {
-
-        const error =
-            await response.text();
-
-        console.error(
-            "Payment API error:",
-            error
-        );
-
-        throw new Error(
-            "No se pudo consultar el pago."
-        );
-    }
-
-
-    return await response.json();
-}
-
-
-/* =========================================
-   EMAIL
-========================================= */
-
-async function sendSaleEmail(
-    order,
-    payment
-) {
-
-    if (
-        !process.env.SMTP_HOST ||
-        !process.env.SMTP_USER ||
-        !process.env.SMTP_PASS ||
-        !process.env.NOTIFY_EMAIL
-    ) {
-
-        console.log(
-            "Email no configurado. Venta registrada:",
-            order.id
-        );
-
-        return;
-
-    }
-
-
-    const transporter =
-        nodemailer.createTransport({
-
-            host:
-                process.env.SMTP_HOST,
-
-            port:
-                Number(
-                    process.env.SMTP_PORT ||
-                    587
-                ),
-
-            secure:
-                process.env.SMTP_SECURE ===
-                "true",
-
-            auth: {
-
-                user:
-                    process.env.SMTP_USER,
-
-                pass:
-                    process.env.SMTP_PASS
-
-            }
-
-        });
-
-
-    const productLines =
-        order.items
-            .map(
-                item => {
-
-                    const subtotal =
-                        item.unit_price *
-                        item.quantity;
-
-                    return (
-                        `${item.title} x${item.quantity} — ` +
-                        `$${subtotal} MXN`
-                    );
-
-                }
-            )
-            .join("\n");
-
-
-    const message = `
-
-NUEVA VENTA — CPP WRLD
-======================
-
-PEDIDO:
-${order.id}
-
-ESTADO:
-PAGADO
-
-CLIENTE:
-${order.customer.firstName} ${order.customer.lastName}
-
-EMAIL:
-${order.customer.email}
-
-TELÉFONO:
-${order.customer.phone}
-
-DIRECCIÓN:
-${order.customer.address}
-
-CIUDAD:
-${order.customer.city}
-
-ESTADO:
-${order.customer.state}
-
-CÓDIGO POSTAL:
-${order.customer.postalCode}
-
-NOTAS:
-${order.customer.notes || "Sin notas"}
-
-PRODUCTOS:
-${productLines}
-
-TOTAL:
-$${order.total} MXN
-
-ID DE PAGO:
-${payment.id}
-
-ESTADO MERCADO PAGO:
-${payment.status}
-
-FECHA:
-${new Date().toLocaleString(
-    "es-MX"
-)}
-
-======================
-CPP WRLD
-`;
-
-
-    await transporter.sendMail({
-
-        from:
-            process.env.SMTP_FROM ||
-            process.env.SMTP_USER,
-
-        to:
-            process.env.NOTIFY_EMAIL,
-
-        subject:
-            `Nueva venta CPP WRLD — ${order.id}`,
-
-        text:
-            message
-
-    });
-
-}
-
-
-/* =========================================
-   WEBHOOK MERCADO PAGO
-========================================= */
+// ==============================
+// WEBHOOK MERCADO PAGO
+// ==============================
 
 app.post(
     "/api/webhook/mercadopago",
-
     webhookLimiter,
-
     async (req, res) => {
-
         try {
+            const xSignature =
+                req.headers[
+                    "x-signature"
+                ];
+
+            const xRequestId =
+                req.headers[
+                    "x-request-id"
+                ];
+
+            const dataId =
+                req.query["data.id"] ||
+                req.query.data_id ||
+                "";
+
+            console.log(
+                "Webhook recibido.",
+                {
+                    dataId,
+                    hasSignature:
+                        !!xSignature,
+                    hasRequestId:
+                        !!xRequestId
+                }
+            );
+
+            if (!xSignature) {
+                console.error(
+                    "Webhook sin x-signature."
+                );
+
+                return res.sendStatus(
+                    401
+                );
+            }
+
+            if (!xRequestId) {
+                console.error(
+                    "Webhook sin x-request-id."
+                );
+
+                return res.sendStatus(
+                    401
+                );
+            }
+
+            if (!MP_WEBHOOK_SECRET) {
+                console.error(
+                    "Falta MP_WEBHOOK_SECRET."
+                );
+
+                return res.sendStatus(
+                    500
+                );
+            }
+
+            // ==============================
+            // PARSEAR X-SIGNATURE
+            // ==============================
+
+            const parts =
+                xSignature.split(",");
+
+            let ts = null;
+            let receivedHash = null;
+
+            for (
+                const part of parts
+            ) {
+                const [
+                    key,
+                    ...valueParts
+                ] =
+                    part.split("=");
+
+                const value =
+                    valueParts.join("=");
+
+                if (
+                    !key ||
+                    !value
+                ) {
+                    continue;
+                }
+
+                const trimmedKey =
+                    key.trim();
+
+                const trimmedValue =
+                    value.trim();
+
+                if (
+                    trimmedKey ===
+                    "ts"
+                ) {
+                    ts =
+                        trimmedValue;
+                }
+
+                if (
+                    trimmedKey ===
+                    "v1"
+                ) {
+                    receivedHash =
+                        trimmedValue;
+                }
+            }
 
             if (
-                !verifyWebhook(req)
+                !ts ||
+                !receivedHash
             ) {
+                console.error(
+                    "x-signature incompleta."
+                );
 
-                console.warn(
+                return res.sendStatus(
+                    401
+                );
+            }
+
+            // ==============================
+            // CREAR MANIFEST
+            // ==============================
+
+            const manifest =
+                `id:${dataId};request-id:${xRequestId};ts:${ts};`;
+
+            console.log(
+                "Manifest generado:",
+                manifest
+            );
+
+            // ==============================
+            // GENERAR FIRMA
+            // ==============================
+
+            const expectedHash =
+                crypto
+                    .createHmac(
+                        "sha256",
+                        MP_WEBHOOK_SECRET
+                    )
+                    .update(
+                        manifest
+                    )
+                    .digest("hex");
+
+            const receivedBuffer =
+                Buffer.from(
+                    receivedHash,
+                    "utf8"
+                );
+
+            const expectedBuffer =
+                Buffer.from(
+                    expectedHash,
+                    "utf8"
+                );
+
+            if (
+                receivedBuffer.length !==
+                expectedBuffer.length
+            ) {
+                console.error(
+                    "Webhook rechazado: longitud de firma diferente."
+                );
+
+                return res.sendStatus(
+                    401
+                );
+            }
+
+            if (
+                !crypto.timingSafeEqual(
+                    receivedBuffer,
+                    expectedBuffer
+                )
+            ) {
+                console.error(
                     "Webhook rechazado: firma inválida."
                 );
 
-                return res
-                    .status(401)
-                    .send(
-                        "Invalid signature"
-                    );
-
+                return res.sendStatus(
+                    401
+                );
             }
 
+            console.log(
+                "Webhook Mercado Pago verificado ✅"
+            );
+
+            // ==============================
+            // PAYMENT ID
+            // ==============================
 
             const paymentId =
-                req.body?.data?.id ||
-                req.query["data.id"] ||
-                req.query.id;
-
+                dataId;
 
             if (!paymentId) {
+                console.error(
+                    "Webhook sin data.id."
+                );
 
-                return res
-                    .status(400)
-                    .send(
-                        "Missing payment ID"
-                    );
-
+                return res.sendStatus(
+                    400
+                );
             }
 
+            // ==============================
+            // OBTENER PAGO
+            // ==============================
 
             const payment =
-                await getPayment(
+                await getMercadoPagoPayment(
                     paymentId
                 );
 
+            console.log(
+                "Pago recibido:",
+                payment.id,
+                payment.status
+            );
+
+            // ==============================
+            // ORDER ID
+            // ==============================
 
             const orderId =
                 payment.external_reference;
 
-
             if (!orderId) {
-
-                return res
-                    .status(200)
-                    .send("OK");
-
-            }
-
-
-            const order =
-                findOrder(
-                    orderId
+                console.error(
+                    "El pago no tiene external_reference."
                 );
 
+                return res.sendStatus(
+                    200
+                );
+            }
 
-            if (!order) {
+            const orders =
+                readOrders();
 
-                console.warn(
+            const orderIndex =
+                orders.findIndex(
+                    order =>
+                        order.id ===
+                        orderId
+                );
+
+            if (
+                orderIndex === -1
+            ) {
+                console.error(
                     "Pedido no encontrado:",
                     orderId
                 );
 
-                return res
-                    .status(200)
-                    .send("OK");
-
+                return res.sendStatus(
+                    200
+                );
             }
 
+            const order =
+                orders[
+                    orderIndex
+                ];
 
-            /*
-                Solo consideramos vendido
-                cuando Mercado Pago dice
-                que el pago fue aprobado.
-            */
+            // ==============================
+            // PAGO APROBADO
+            // ==============================
 
             if (
                 payment.status ===
-                    "approved" &&
-                order.status !==
-                    "paid"
+                "approved"
             ) {
-
-                const updatedOrder =
-                    updateOrder(
-
-                        orderId,
-
-                        {
-
-                            status:
-                                "paid",
-
-                            paymentId:
-                                String(
-                                    payment.id
-                                ),
-
-                            paymentStatus:
-                                payment.status,
-
-                            paidAt:
-                                new Date()
-                                    .toISOString()
-
-                        }
-
+                if (
+                    order.paymentStatus ===
+                    "approved"
+                ) {
+                    console.log(
+                        "Pago ya procesado:",
+                        orderId
                     );
 
+                    return res.sendStatus(
+                        200
+                    );
+                }
+
+                order.status =
+                    "paid";
+
+                order.paymentId =
+                    payment.id;
+
+                order.paymentStatus =
+                    payment.status;
+
+                order.paidAt =
+                    new Date().toISOString();
+
+                writeOrders(
+                    orders
+                );
+
+                console.log(
+                    "PAGO APROBADO:",
+                    orderId
+                );
+
+                // ==============================
+                // TELEGRAM
+                // ==============================
 
                 try {
-
-                    await sendSaleEmail(
-                        updatedOrder,
+                    await sendSaleTelegram(
+                        order,
                         payment
                     );
 
-                } catch (emailError) {
-
-                    console.error(
-                        "No se pudo enviar el email:",
-                        emailError
+                    console.log(
+                        "Venta enviada a Telegram:",
+                        orderId
                     );
 
+                } catch (
+                    telegramError
+                ) {
+                    console.error(
+                        "No se pudo enviar Telegram:",
+                        telegramError
+                    );
                 }
 
+            } else {
+                // ==============================
+                // OTRO ESTADO
+                // ==============================
+
+                order.paymentId =
+                    payment.id;
+
+                order.paymentStatus =
+                    payment.status;
+
+                writeOrders(
+                    orders
+                );
+
+                console.log(
+                    "Estado de pago:",
+                    payment.status
+                );
             }
 
-
-            return res
-                .status(200)
-                .send("OK");
+            return res.sendStatus(
+                200
+            );
 
         } catch (error) {
-
             console.error(
-                "Webhook error:",
+                "Error procesando webhook:",
                 error
             );
 
-            return res
-                .status(500)
-                .send("Webhook error");
-
+            return res.sendStatus(
+                500
+            );
         }
-
     }
 );
 
-
-/* =========================================
-   HEALTH CHECK
-========================================= */
+// ==============================
+// HEALTH CHECK
+// ==============================
 
 app.get(
     "/api/health",
     (req, res) => {
-
         res.json({
-
-            ok:
-                true,
-
-            store:
-                "CPP WRLD"
-
+            ok: true,
+            store: "CPP WRLD"
         });
-
     }
 );
 
-
-/* =========================================
-   INICIAR SERVIDOR
-========================================= */
+// ==============================
+// SERVIDOR
+// ==============================
 
 app.listen(
     PORT,
+    "0.0.0.0",
     () => {
-
-        console.log("");
         console.log(
             "=============================="
         );
@@ -1160,8 +963,11 @@ app.listen(
         );
 
         console.log(
-            "=============================="
+            "Trust proxy: ENABLED"
         );
 
+        console.log(
+            "=============================="
+        );
     }
 );

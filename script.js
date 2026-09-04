@@ -135,9 +135,8 @@ function renderProducts() {
 
                 <button
                     class="add-button"
-                    onclick="
-                        addToCart('${product.id}')
-                    "
+                    type="button"
+                    data-product-id="${product.id}"
                 >
                     ADD TO BAG
                 </button>
@@ -392,12 +391,9 @@ function renderCart() {
                 <div class="quantity">
 
                     <button
-                        onclick="
-                            changeQuantity(
-                                '${product.id}',
-                                -1
-                            )
-                        "
+                        type="button"
+                        class="quantity-minus"
+                        data-product-id="${product.id}"
                     >
                         −
                     </button>
@@ -409,24 +405,18 @@ function renderCart() {
 
 
                     <button
-                        onclick="
-                            changeQuantity(
-                                '${product.id}',
-                                1
-                            )
-                        "
+                        type="button"
+                        class="quantity-plus"
+                        data-product-id="${product.id}"
                     >
                         +
                     </button>
 
 
                     <button
+                        type="button"
                         class="remove"
-                        onclick="
-                            removeFromCart(
-                                '${product.id}'
-                            )
-                        "
+                        data-product-id="${product.id}"
                     >
                         REMOVE
                     </button>
@@ -446,6 +436,111 @@ function renderCart() {
     updateTotals(subtotal);
 
 }
+
+
+/* =================================
+   CART BUTTON EVENTS
+   MOBILE + DESKTOP
+================================= */
+
+document
+    .getElementById("cartItems")
+    .addEventListener(
+        "click",
+        function(event) {
+
+            const button =
+                event.target.closest("button");
+
+
+            if (!button) return;
+
+
+            const productId =
+                button.dataset.productId;
+
+
+            if (!productId) return;
+
+
+            if (
+                button.classList.contains(
+                    "quantity-minus"
+                )
+            ) {
+
+                changeQuantity(
+                    productId,
+                    -1
+                );
+
+                return;
+
+            }
+
+
+            if (
+                button.classList.contains(
+                    "quantity-plus"
+                )
+            ) {
+
+                changeQuantity(
+                    productId,
+                    1
+                );
+
+                return;
+
+            }
+
+
+            if (
+                button.classList.contains(
+                    "remove"
+                )
+            ) {
+
+                removeFromCart(
+                    productId
+                );
+
+            }
+
+        }
+    );
+
+
+/* =================================
+   PRODUCT BUTTON EVENTS
+================================= */
+
+document
+    .getElementById("productGrid")
+    .addEventListener(
+        "click",
+        function(event) {
+
+            const button =
+                event.target.closest(
+                    ".add-button"
+                );
+
+
+            if (!button) return;
+
+
+            const productId =
+                button.dataset.productId;
+
+
+            if (!productId) return;
+
+
+            addToCart(productId);
+
+        }
+    );
 
 
 /* =================================
