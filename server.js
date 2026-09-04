@@ -593,26 +593,41 @@ app.post(
         try {
 
             /* =========================
-               WEBHOOK DEBUG
+               HEADERS
             ========================= */
 
-            const dataId =
-                req.query["data.id"] ||
-                req.query.data?.id ||
-                req.body?.data?.id ||
-                "";
-
-
             const xSignature =
-                req.headers[
-                    "x-signature"
-                ] || "";
+                String(
+                    req.headers["x-signature"] ||
+                    ""
+                ).trim();
 
 
             const xRequestId =
-                req.headers[
-                    "x-request-id"
-                ] || "";
+                String(
+                    req.headers["x-request-id"] ||
+                    ""
+                ).trim();
+
+
+            /* =========================
+               DATA ID
+            ========================= */
+
+            const queryDataId =
+                req.query["data.id"];
+
+
+            const bodyDataId =
+                req.body?.data?.id;
+
+
+            const dataId =
+                String(
+                    queryDataId ||
+                    bodyDataId ||
+                    ""
+                ).trim();
 
 
             console.log(
@@ -630,12 +645,9 @@ app.post(
 
             console.log(
                 "Query:",
-                req.query
-            );
-
-            console.log(
-                "Body:",
-                req.body
+                JSON.stringify(
+                    req.query
+                )
             );
 
             console.log(
@@ -644,13 +656,13 @@ app.post(
             );
 
             console.log(
-                "X-Signature:",
-                xSignature
+                "Request ID:",
+                xRequestId
             );
 
             console.log(
-                "X-Request-ID:",
-                xRequestId
+                "Tiene firma:",
+                Boolean(xSignature)
             );
 
             console.log(
@@ -659,7 +671,7 @@ app.post(
 
 
             /* =========================
-               VALIDATE CONFIG
+               CONFIG CHECK
             ========================= */
 
             if (!MP_WEBHOOK_SECRET) {
@@ -676,6 +688,10 @@ app.post(
 
             }
 
+
+            /* =========================
+               HEADER CHECK
+            ========================= */
 
             if (!xSignature) {
 
@@ -723,42 +739,74 @@ app.post(
 
 
             /* =========================
-               PARSE SIGNATURE
+               PARSE X-SIGNATURE
             ========================= */
 
-            const signatureParts = {};
+            let ts = "";
+            let v1 = "";
 
 
-            xSignature
-                .split(",")
-                .forEach(part => {
-
-                    const [
-                        key,
-                        ...valueParts
-                    ] =
-                        part.split("=");
+            const signatureParts =
+                xSignature.split(",");
 
 
-                    if (!key) return;
+            for (
+                const part
+                of signatureParts
+            ) {
+
+                const separator =
+                    part.indexOf("=");
 
 
-                    signatureParts[
-                        key.trim()
-                    ] =
-                        valueParts
-                            .join("=")
-                            .trim();
-
-                });
+                if (separator === -1) {
+                    continue;
+                }
 
 
-            const ts =
-                signatureParts.ts;
+                const key =
+                    part
+                        .slice(
+                            0,
+                            separator
+                        )
+                        .trim();
 
 
-            const v1 =
-                signatureParts.v1;
+                const value =
+                    part
+                        .slice(
+                            separator + 1
+                        )
+                        .trim();
+
+
+                if (key === "ts") {
+
+                    ts = value;
+
+                }
+
+
+                if (key === "v1") {
+
+                    v1 = value;
+
+                }
+
+            }
+
+
+            console.log(
+                "Timestamp:",
+                ts
+            );
+
+
+            console.log(
+                "Firma recibida:",
+                v1
+            );
 
 
             if (!ts || !v1) {
@@ -781,9 +829,15 @@ app.post(
             ========================= */
 
             const manifest =
-                `id:${String(dataId).toLowerCase()};` +
-                `request-id:${xRequestId};` +
-                `ts:${ts};`;
+                "id:" +
+                dataId +
+                ";" +
+                "request-id:" +
+                xRequestId +
+                ";" +
+                "ts:" +
+                ts +
+                ";";
 
 
             console.log(
@@ -793,7 +847,7 @@ app.post(
 
 
             /* =========================
-               HMAC
+               HMAC SHA256
             ========================= */
 
             const generatedSignature =
@@ -802,36 +856,53 @@ app.post(
                         "sha256",
                         MP_WEBHOOK_SECRET
                     )
-                    .update(manifest)
+                    .update(
+                        manifest,
+                        "utf8"
+                    )
                     .digest("hex");
 
 
-            const receivedBuffer =
-                Buffer.from(
-                    String(v1),
-                    "utf8"
-                );
+            console.log(
+                "Firma calculada:",
+                generatedSignature
+            );
 
 
-            const generatedBuffer =
-                Buffer.from(
-                    generatedSignature,
-                    "utf8"
-                );
-
+            /* =========================
+               CONSTANT TIME COMPARE
+            ========================= */
 
             let signatureValid = false;
 
 
+            const received =
+                String(v1)
+                    .toLowerCase();
+
+
+            const generated =
+                String(
+                    generatedSignature
+                )
+                    .toLowerCase();
+
+
             if (
-                receivedBuffer.length ===
-                generatedBuffer.length
+                received.length ===
+                generated.length
             ) {
 
                 signatureValid =
                     crypto.timingSafeEqual(
-                        receivedBuffer,
-                        generatedBuffer
+                        Buffer.from(
+                            received,
+                            "utf8"
+                        ),
+                        Buffer.from(
+                            generated,
+                            "utf8"
+                        )
                     );
 
             }
@@ -853,7 +924,15 @@ app.post(
 
 
             console.log(
-                "Firma del webhook válida."
+                "================================"
+            );
+
+            console.log(
+                "FIRMA DEL WEBHOOK VÁLIDA ✅"
+            );
+
+            console.log(
+                "================================"
             );
 
 
@@ -868,7 +947,7 @@ app.post(
 
 
             const paymentId =
-                String(dataId);
+                dataId;
 
 
             console.log(
@@ -928,6 +1007,7 @@ app.post(
                         console.log(
                             "Pago recibido:",
                             {
+
                                 id:
                                     payment.id,
 
@@ -936,6 +1016,7 @@ app.post(
 
                                 external_reference:
                                     payment.external_reference
+
                             }
                         );
 
