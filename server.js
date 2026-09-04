@@ -1095,32 +1095,39 @@ app.post(
                                     order.customer;
 
 
+                                const productsMessage =
+                                    order.items
+                                        .map(
+                                            item =>
+                                                `• ${item.name} × ${item.quantity} — $${item.price * item.quantity} MXN`
+                                        )
+                                        .join("\n");
+
+
                                 const message =
 
-`<b>🛒 NUEVO PEDIDO CPP WRLD</b>
+`<b>🛒 NUEVO PEDIDO — CPP WRLD</b>
 
 <b>Pedido:</b> ${order.id}
-
 <b>Estado:</b> PAGADO
 
-<b>Cliente:</b> ${customer.firstName} ${customer.lastName}
-
-<b>Email:</b> ${customer.email}
-
+<b>👤 CLIENTE</b>
+<b>Nombre:</b> ${customer.firstName} ${customer.lastName}
+<b>Correo electrónico:</b> ${customer.email}
 <b>Teléfono:</b> ${customer.phone}
 
+<b>📍 ENVÍO</b>
 <b>Dirección:</b> ${customer.address}
-
 <b>Ciudad:</b> ${customer.city}
-
 <b>Estado:</b> ${customer.state}
+<b>Código postal:</b> ${customer.postalCode}
 
-<b>C.P.:</b> ${customer.postalCode}
+<b>🛍️ PRODUCTOS</b>
+${productsMessage}
 
-<b>Total:</b> $${order.total} MXN
+<b>💰 TOTAL:</b> $${order.total} MXN
 
-<b>Pago:</b> Mercado Pago
-
+<b>💳 Método de pago:</b> Mercado Pago
 <b>ID de pago:</b> ${payment.id}`;
 
 
@@ -1154,7 +1161,9 @@ app.post(
 
                     }
 
-                } catch (paymentError) {
+                } catch (
+                    paymentError
+                ) {
 
                     console.error(
                         "Error procesando pago:",
