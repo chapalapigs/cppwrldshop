@@ -592,18 +592,13 @@ app.post(
 
         try {
 
-            /*
-             * IMPORTANTE:
-             * Mercado Pago puede mandar data.id
-             * como query parameter:
-             *
-             * ?data.id=123456
-             *
-             * Por eso primero usamos req.query.
-             */
+            /* =========================
+               WEBHOOK DEBUG
+            ========================= */
 
             const dataId =
                 req.query["data.id"] ||
+                req.query.data?.id ||
                 req.body?.data?.id ||
                 "";
 
@@ -621,23 +616,50 @@ app.post(
 
 
             console.log(
-                "Webhook recibido.",
-                {
-                    dataId,
-                    hasSignature:
-                        Boolean(
-                            xSignature
-                        ),
-                    hasRequestId:
-                        Boolean(
-                            xRequestId
-                        )
-                }
+                "================================"
+            );
+
+            console.log(
+                "WEBHOOK RECIBIDO"
+            );
+
+            console.log(
+                "Original URL:",
+                req.originalUrl
+            );
+
+            console.log(
+                "Query:",
+                req.query
+            );
+
+            console.log(
+                "Body:",
+                req.body
+            );
+
+            console.log(
+                "Data ID:",
+                dataId
+            );
+
+            console.log(
+                "X-Signature:",
+                xSignature
+            );
+
+            console.log(
+                "X-Request-ID:",
+                xRequestId
+            );
+
+            console.log(
+                "================================"
             );
 
 
             /* =========================
-               VALIDATE SIGNATURE
+               VALIDATE CONFIG
             ========================= */
 
             if (!MP_WEBHOOK_SECRET) {
@@ -648,7 +670,9 @@ app.post(
 
                 return res
                     .status(500)
-                    .send("Webhook secret missing");
+                    .send(
+                        "Webhook secret missing"
+                    );
 
             }
 
@@ -661,7 +685,9 @@ app.post(
 
                 return res
                     .status(401)
-                    .send("Missing signature");
+                    .send(
+                        "Missing signature"
+                    );
 
             }
 
@@ -674,7 +700,9 @@ app.post(
 
                 return res
                     .status(401)
-                    .send("Missing request id");
+                    .send(
+                        "Missing request id"
+                    );
 
             }
 
@@ -687,7 +715,9 @@ app.post(
 
                 return res
                     .status(400)
-                    .send("Missing data.id");
+                    .send(
+                        "Missing data.id"
+                    );
 
             }
 
@@ -697,6 +727,7 @@ app.post(
             ========================= */
 
             const signatureParts = {};
+
 
             xSignature
                 .split(",")
@@ -708,7 +739,9 @@ app.post(
                     ] =
                         part.split("=");
 
+
                     if (!key) return;
+
 
                     signatureParts[
                         key.trim()
@@ -723,6 +756,7 @@ app.post(
             const ts =
                 signatureParts.ts;
 
+
             const v1 =
                 signatureParts.v1;
 
@@ -735,7 +769,9 @@ app.post(
 
                 return res
                     .status(401)
-                    .send("Invalid signature");
+                    .send(
+                        "Invalid signature"
+                    );
 
             }
 
@@ -772,9 +808,10 @@ app.post(
 
             const receivedBuffer =
                 Buffer.from(
-                    v1,
+                    String(v1),
                     "utf8"
                 );
+
 
             const generatedBuffer =
                 Buffer.from(
@@ -808,7 +845,9 @@ app.post(
 
                 return res
                     .status(401)
-                    .send("Invalid signature");
+                    .send(
+                        "Invalid signature"
+                    );
 
             }
 
@@ -829,7 +868,7 @@ app.post(
 
 
             const paymentId =
-                dataId;
+                String(dataId);
 
 
             console.log(
@@ -857,7 +896,7 @@ app.post(
 
                     const paymentResponse =
                         await fetch(
-                            `https://api.mercadopago.com/v1/payments/${paymentId}`,
+                            `https://api.mercadopago.com/v1/payments/${encodeURIComponent(paymentId)}`,
                             {
 
                                 method: "GET",
@@ -886,6 +925,21 @@ app.post(
 
                     } else {
 
+                        console.log(
+                            "Pago recibido:",
+                            {
+                                id:
+                                    payment.id,
+
+                                status:
+                                    payment.status,
+
+                                external_reference:
+                                    payment.external_reference
+                            }
+                        );
+
+
                         const orders =
                             readOrders();
 
@@ -905,8 +959,10 @@ app.post(
                                     payment.id
                                 );
 
+
                             order.paymentStatus =
                                 payment.status;
+
 
                             if (
                                 payment.status ===
@@ -1047,7 +1103,9 @@ app.post(
 
             return res
                 .status(500)
-                .send("Webhook error");
+                .send(
+                    "Webhook error"
+                );
 
         }
 
